@@ -1,0 +1,28 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo Installing the Angular CLI...
+      - npm install -g @angular/cli
+  pre_build:
+    commands:
+      - echo Installing dependencies...
+      - npm install
+  build:
+    commands:
+      - echo Building the Angular application...
+      - ng build --configuration production
+  post_build:
+    commands:
+      - echo Build completed successfully.
+      - echo Copying files to S3...
+      - aws s3 cp dist/revhire/ s3://code-dist-bucket/ --recursive
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: dist
+  discard-paths: no
