@@ -3,7 +3,7 @@ provider "aws" {
   region = "us-east-1"
 }
 
-resource "aws_codecommit_repository" "my_frontend_repo" {
+resource "aws_codecommit_repository" "my_frontend_repo_final" {
   repository_name = var.frontend-repo-name
   description     = "Repository for Project"
 
@@ -17,11 +17,11 @@ resource "aws_codecommit_repository" "my_frontend_repo" {
 resource "null_resource" "clone_repo" {
   provisioner "local-exec" {
     command = <<-EOT
-      mkdir gitreponew
+      mkdir gitrepo_final
       pwd
-      git clone ${aws_codecommit_repository.my_frontend_repo.clone_url_http} gitreponew/
-      cp -r revhire-frontend/* gitreponew/
-      cd gitreponew
+      git clone ${aws_codecommit_repository.my_frontend_repo_final.clone_url_http} gitrepo_final/
+      cp -r revhire-frontend/* gitrepo_final/
+      cd gitrepo_final
       git add .
       git commit -m "Initial commit"
       git push -u origin master
@@ -29,20 +29,20 @@ resource "null_resource" "clone_repo" {
     interpreter = ["C:\\Program Files\\Git\\bin\\bash.exe", "-c"]
   }
 
-  depends_on = [aws_codecommit_repository.my_frontend_repo]
+  depends_on = [aws_codecommit_repository.my_frontend_repo_final]
   triggers = {
     always_run = timestamp()
   }
 }
 
 #Creating a s3 bucket
-resource "aws_s3_bucket" "myfrontendbucket" {
+resource "aws_s3_bucket" "myfrontendbucket_final" {
   bucket = var.frontend-bucket-name
 
 }
 
 resource "aws_s3_bucket_ownership_controls" "example" {
-  bucket = aws_s3_bucket.myfrontendbucket.id
+  bucket = aws_s3_bucket.myfrontendbucket_final.id
   rule {
     object_ownership = "BucketOwnerPreferred"
   }
@@ -50,7 +50,7 @@ resource "aws_s3_bucket_ownership_controls" "example" {
 
 #Giving public access
 resource "aws_s3_bucket_public_access_block" "example" {
-  bucket = aws_s3_bucket.myfrontendbucket.id
+  bucket = aws_s3_bucket.myfrontendbucket_final.id
 
   block_public_acls       = false
   block_public_policy     = false
@@ -65,13 +65,13 @@ resource "aws_s3_bucket_acl" "example" {
     aws_s3_bucket_public_access_block.example,
   ]
 
-  bucket = aws_s3_bucket.myfrontendbucket.id
+  bucket = aws_s3_bucket.myfrontendbucket_final.id
   acl    = "private"
 }
 
 # Bucket policy to allow public read access to objects
 resource "aws_s3_bucket_policy" "mybucket_policy" {
-  bucket = aws_s3_bucket.myfrontendbucket.id
+  bucket = aws_s3_bucket.myfrontendbucket_final.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -83,7 +83,7 @@ resource "aws_s3_bucket_policy" "mybucket_policy" {
 				"s3:GetObject",
 				"s3:PutObject"
 			]
-        Resource  = "${aws_s3_bucket.myfrontendbucket.arn}/*"
+        Resource  = "${aws_s3_bucket.myfrontendbucket_final.arn}/*"
       }
     ]
   })
@@ -91,19 +91,19 @@ resource "aws_s3_bucket_policy" "mybucket_policy" {
 
 #Enabling static web hosting
 resource "aws_s3_bucket_website_configuration" "website" {
-  bucket = aws_s3_bucket.myfrontendbucket.id
+  bucket = aws_s3_bucket.myfrontendbucket_final.id
   index_document {
     suffix = "index.html"
   }
 }
 
 output "static_web_hosting_url" {
-  value = aws_s3_bucket.myfrontendbucket.website_endpoint
+  value = aws_s3_bucket.myfrontendbucket_final.website_endpoint
 }
 
 # IAM role for CodeBuild
-resource "aws_iam_role" "codebuild_role" {
-  name = "codebuild-role"
+resource "aws_iam_role" "codebuild_role_final" {
+  name = "codebuild-role-final"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -121,8 +121,8 @@ resource "aws_iam_role" "codebuild_role" {
 
 # IAM policy for CodeBuild role
 resource "aws_iam_role_policy" "codebuild_role_policy" {
-  name   = "codebuild-role-policy"
-  role   = aws_iam_role.codebuild_role.id
+  name   = "codebuild-role-policy-final"
+  role   = aws_iam_role.codebuild_role_final.id
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -149,9 +149,9 @@ resource "aws_iam_role_policy" "codebuild_role_policy" {
 }
 
 # CodeBuild project
-resource "aws_codebuild_project" "codecommit_project" {
-  name          = "codecommit-build-project"
-  service_role  = aws_iam_role.codebuild_role.arn
+resource "aws_codebuild_project" "codecommit_project_final" {
+  name          = "codecommit-build-project-final"
+  service_role  = aws_iam_role.codebuild_role_final.arn
   build_timeout = 30  # 30 minutes build timeout
 
   source {
@@ -209,106 +209,36 @@ EOF
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/codecommit-build-project"
+      group_name  = "/aws/codebuild/codecommit-build-project-final"
       stream_name = "build-log"
     }
   }
 }
-
-# IAM Policy for CodePipeline to access CodeCommit
-resource "aws_iam_policy" "codepipeline_codecommit_policy" {
-  name        = "codepipeline-codecommit-policy"
-  description = "Policy to allow CodePipeline to access CodeCommit"
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect   = "Allow",
-        Action   = [
-          "codecommit:Get*",
-          "codecommit:GitPull",
-          "codecommit:List*",
-          "codecommit:UploadArchive"
-        ],
-        Resource = "*"
-      }
-    ]
-     })
-}
-
-# Attachment of IAM Policy to CodePipeline role
-resource "aws_iam_policy_attachment" "codepipeline_codecommit_attachment" {
-  name       = "codepipeline-codecommit-attachment"
-  roles      = [aws_iam_role.codepipeline_role.name]
-  policy_arn = aws_iam_policy.codepipeline_codecommit_policy.arn
-}
-# IAM Role for CodePipeline
-resource "aws_iam_role" "codepipeline_role" {
-  name = "codepipeline-role"
-
-  assume_role_policy = jsonencode({
-    Version   = "2012-10-17",
-    Statement = [
-      {
-        Effect    = "Allow",
-        Principal = {
-          Service = "codepipeline.amazonaws.com"
-        },
-        Action    = "sts:AssumeRole"
-      }
-    ]
-  })
-}
-
-
-
-
-# IAM policy for CodePipeline role
-resource "aws_iam_role_policy" "codepipeline_role_policy" {
-  name   = "codepipeline-role-policy"
-  role   = aws_iam_role.codepipeline_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Action = [
-          "codebuild:StartBuild",
-          "codepipeline:PutJobSuccessResult",
-          "codepipeline:PutJobFailureResult",
-          "codebuild:BatchGetBuilds"
-        ],
-        Effect   = "Allow",
-        Resource = "*"
-      }
-    ]
-  })
-}
+# Data source for AWS account details
+data "aws_caller_identity" "current" {}
 
 # CodePipeline
-resource "aws_codepipeline" "my_codepipeline" {
-  name     = "my-codepipeline"
-  role_arn = aws_iam_role.codepipeline_role.arn
+resource "aws_codepipeline" "codecommit_pipeline_final" {
+  name     = "codecommit-pipeline-final"
+  role_arn = aws_iam_role.codebuild_role.arn
 
   artifact_store {
-    location = aws_s3_bucket.myfrontendbucket.bucket
     type     = "S3"
+    location = aws_s3_bucket.myfrontendbucket_final.bucket
   }
 
   stage {
     name = "Source"
 
     action {
-      name             = "SourceAction"
+      name             = "Source"
       category         = "Source"
       owner            = "AWS"
       provider         = "CodeCommit"
       version          = "1"
       output_artifacts = ["source_output"]
-
       configuration = {
-        RepositoryName = var.frontend-repo-name
+        RepositoryName = aws_codecommit_repository.my_frontend_repo_final.repository_name
         BranchName     = "master"
       }
     }
@@ -318,63 +248,20 @@ resource "aws_codepipeline" "my_codepipeline" {
     name = "Build"
 
     action {
-      name             = "BuildAction"
+      name             = "Build"
       category         = "Build"
       owner            = "AWS"
       provider         = "CodeBuild"
       version          = "1"
       input_artifacts  = ["source_output"]
       output_artifacts = ["build_output"]
-
       configuration = {
-        ProjectName = aws_codebuild_project.codecommit_project.name
+        ProjectName = aws_codebuild_project.codecommit_project_final.name
       }
     }
   }
 }
 
-# Define the IAM policy
-resource "aws_iam_policy" "codebuild_batch_get_builds_policy" {
-  name        = "codebuild_batch_get_builds_policy"
-  description = "Policy to allow BatchGetBuilds action on CodeBuild projects"
-  policy      = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "codebuild:BatchGetBuilds"
-      ],
-      "Resource": "arn:aws:codebuild:us-east-1:654654292657:project/codecommit-build-project"
-    }
-  ]
-}
-EOF
-}
-
-# Attach the policy to the CodePipeline role
-resource "aws_iam_role_policy_attachment" "attach_codebuild_policy_to_codepipeline_role" {
-  role       = "codepipeline-role"  # Replace with your actual CodePipeline role name
-  policy_arn = aws_iam_policy.codebuild_batch_get_builds_policy.arn
-}
-# Define the IAM policy for CodePipeline role to allow BatchGetBuilds action
-resource "aws_iam_policy" "codepipeline_codebuild_policy" {
-  name        = "CodePipelineCodeBuildPolicy"
-  description = "Policy to allow CodePipeline to call CodeBuild actions"
-  policy      = jsonencode({
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Action": [
-          "codebuild:BatchGetBuilds",
-          "codebuild:StartBuild",
-          "codebuild:StopBuild",
-          "codebuild:BatchGetProjects"
-        ],
-        "Resource": "*"
-      }
-    ]
-  })
+output "pipeline_name" {
+  value = aws_codepipeline.codecommit_pipeline_final.name
 }
